@@ -37,7 +37,6 @@ struct Config {
     search_queries: Vec<String>,
 }
 
-// デフォルト値関数
 fn default_profile_dir() -> String {
     "chromium/profile".to_string()
 }
@@ -70,36 +69,21 @@ impl Default for Config {
     }
 }
 
-// 設定読み込み
 fn load_config() -> Config {
     let config_path = get_base_path("Config.toml");
-
     if config_path.exists() {
         println!("設定ファイル読み込み: {:?}", config_path);
-        match fs::read_to_string(&config_path) {
-            Ok(content) => match toml::from_str(&content) {
-                Ok(config) => {
-                    println!("設定ファイル読み込み成功");
-                    return config;
-                }
-                Err(e) => {
-                    println!("設定ファイルパースエラー: {}。デフォルト使用。", e);
-                }
-            },
-            Err(e) => {
-                println!("設定ファイル読み込みエラー: {}。デフォルト使用。", e);
+        if let Ok(content) = fs::read_to_string(&config_path) {
+            if let Ok(cfg) = toml::from_str(&content) {
+                println!("設定ファイル読み込み成功");
+                return cfg;
             }
         }
-    } else {
-        println!("設定ファイルなし。デフォルト使用。");
     }
-
+    println!("設定ファイル読み込み失敗。デフォルト使用。");
     Config::default()
 }
 
-// ============================================================
-// JSON用構造体
-// ============================================================
 #[derive(Serialize, Deserialize, Debug)]
 struct SearchResult {
     rank: usize,
@@ -116,9 +100,6 @@ struct PageResult {
     results: Vec<SearchResult>,
 }
 
-// ============================================================
-// 時間フォーマット用ヘルパー
-// ============================================================
 fn format_duration(start: DateTime<Local>, end: DateTime<Local>) -> String {
     let duration = end.signed_duration_since(start);
     let total_seconds = duration.num_seconds();
@@ -126,7 +107,6 @@ fn format_duration(start: DateTime<Local>, end: DateTime<Local>) -> String {
     let minutes = (total_seconds % 3600) / 60;
     let seconds = total_seconds % 60;
     let millis = duration.num_milliseconds() % 1000;
-
     if hours > 0 {
         format!("{}時間{}分{}秒", hours, minutes, seconds)
     } else if minutes > 0 {
@@ -136,59 +116,37 @@ fn format_duration(start: DateTime<Local>, end: DateTime<Local>) -> String {
     }
 }
 
-// ============================================================
-// パス取得（デバッグ/リリース分岐）
-// ============================================================
 fn get_base_path(relative: &str) -> PathBuf {
     if cfg!(debug_assertions) {
         let current_dir = env::current_dir().expect("カレントディレクトリ取得失敗");
         current_dir.join(relative)
     } else {
         let exe_path = env::current_exe().expect("実行ファイルパス取得失敗");
-        let exe_dir = exe_path.parent().expect("親ディレクトリ取得失敗");
-        exe_dir.join(relative)
+        exe_path.parent().unwrap().join(relative)
     }
 }
 
-// ============================================================
-// プロファイル初期化
-// ============================================================
 fn init_profile_dir(config: &Config) -> Result<PathBuf> {
     let path = get_base_path(&config.profile_dir);
-    if !path.exists() {
-        fs::create_dir_all(&path)?;
-    }
-    println!("プロファイル: {:?}", path);
+    fs::create_dir_all(&path)?;
     Ok(path)
 }
 
-// ============================================================
-// プロファイル完全削除
-// ============================================================
 fn clear_profile_dir(config: &Config) -> Result<()> {
     let path = get_base_path(&config.profile_dir);
     if path.exists() {
-        println!("プロファイル削除中: {:?}", path);
         fs::remove_dir_all(&path)?;
-        println!("プロファイル削除完了");
     }
     Ok(())
 }
 
-// ============================================================
-// 結果ディレクトリ初期化
-// ============================================================
 fn init_result_dir(config: &Config, start_time: DateTime<Local>) -> Result<PathBuf> {
     let time_str = start_time.format("%Y-%m-%d-%H-%M-%S").to_string();
     let path = get_base_path(&config.result_dir).join(&time_str);
     fs::create_dir_all(&path)?;
-    println!("結果保存先: {:?}", path);
     Ok(path)
 }
 
-// ============================================================
-// クエリ用結果ディレクトリ作成
-// ============================================================
 fn init_query_result_dir(result_base: &PathBuf, query: &str) -> Result<PathBuf> {
     let safe_query = query
         .replace('/', "_")
@@ -200,15 +158,11 @@ fn init_query_result_dir(result_base: &PathBuf, query: &str) -> Result<PathBuf> 
         .replace('<', "_")
         .replace('>', "_")
         .replace('|', "_");
-
     let path = result_base.join(&safe_query);
     fs::create_dir_all(&path)?;
     Ok(path)
 }
 
-// ============================================================
-// 検索結果をJSONファイルに保存
-// ============================================================
 fn save_search_results_json(
     query_dir: &PathBuf,
     query: &str,
@@ -216,7 +170,6 @@ fn save_search_results_json(
     results: &[(String, String)],
 ) -> Result<()> {
     let file_path = query_dir.join(format!("{}.json", page_num));
-
     let search_results: Vec<SearchResult> = results
         .iter()
         .enumerate()
@@ -226,7 +179,6 @@ fn save_search_results_json(
             url: url.clone(),
         })
         .collect();
-
     let page_result = PageResult {
         query: query.to_string(),
         page: page_num,
@@ -234,45 +186,31 @@ fn save_search_results_json(
         result_count: search_results.len(),
         results: search_results,
     };
-
     let json = serde_json::to_string_pretty(&page_result)?;
     let mut file = fs::File::create(&file_path)?;
     file.write_all(json.as_bytes())?;
-
-    println!("  保存: {:?} ({}件)", file_path, results.len());
     Ok(())
 }
 
-// ============================================================
-// HTMLから検索結果を抽出
-// ============================================================
 fn extract_search_results(html: &str) -> Vec<(String, String)> {
     let document = Html::parse_document(html);
     let selector = Selector::parse(r#"a[jsname="UWckNb"]"#).unwrap();
-
     let mut results = Vec::new();
-
     for element in document.select(&selector) {
         let url = element.value().attr("href").unwrap_or("").to_string();
-
         let title_selector = Selector::parse("h3").unwrap();
         let title = element
             .select(&title_selector)
             .next()
             .map(|h3| h3.text().collect::<String>())
             .unwrap_or_default();
-
         if !url.is_empty() && !title.is_empty() {
             results.push((title, url));
         }
     }
-
     results
 }
 
-// ============================================================
-// ブラウザ管理
-// ============================================================
 struct BrowserManager<'a> {
     browser: Option<Browser>,
     config: &'a Config,
@@ -294,41 +232,24 @@ impl<'a> BrowserManager<'a> {
     }
 
     fn restart(&mut self) -> Result<&Browser> {
-        println!("ブラウザを再起動中...");
+        println!("ブラウザを再起動中（profileリセット）...");
         self.browser = None;
         thread::sleep(Duration::from_millis(2000));
-
         self.browser = Some(launch_browser(self.config)?);
-        println!("ブラウザ再起動完了。");
-        Ok(self.browser.as_ref().unwrap())
-    }
-
-    fn full_reset(&mut self) -> Result<&Browser> {
-        println!("\n>>> フルリセット開始 <<<");
-
-        println!("ブラウザ終了中...");
-        self.browser = None;
-        thread::sleep(Duration::from_millis(3000));
-
-        clear_profile_dir(self.config)?;
-        thread::sleep(Duration::from_millis(1000));
-
-        println!("ブラウザ新規起動中...");
-        self.browser = Some(launch_browser(self.config)?);
-        thread::sleep(Duration::from_millis(2000));
-        println!(">>> フルリセット完了 <<<\n");
-
         Ok(self.browser.as_ref().unwrap())
     }
 }
-
 // ============================================================
 // ブラウザ起動
 // ============================================================
 fn launch_browser(config: &Config) -> Result<Browser> {
+    println!("profile を強制リセット中...");
+    let _ = clear_profile_dir(config);
+    println!("profile 削除完了。新規作成中...");
     let user_data_dir = init_profile_dir(config)?;
-    let chromium_path = get_base_path(&config.chromium_path);
+    println!("新規 profile: {:?}", user_data_dir);
 
+    let chromium_path = get_base_path(&config.chromium_path);
     println!("Chromium: {:?}", chromium_path);
 
     let args: Vec<&OsStr> = vec![
@@ -351,6 +272,9 @@ fn launch_browser(config: &Config) -> Result<Browser> {
         OsStr::new("--enable-zero-copy"),
         OsStr::new("--ignore-gpu-blocklist"),
         OsStr::new("--disable-dev-shm-usage"),
+        OsStr::new("--disable-geolocation"),
+        OsStr::new("--disable-notifications"),
+        OsStr::new("--disable-popup-blocking"),
     ];
 
     let ignore_default_args: Vec<&OsStr> = vec![OsStr::new("--enable-automation")];
@@ -385,7 +309,7 @@ fn setup_stealth_cdp(tab: &Tab) -> Result<()> {
         platform: Some("Win32".to_string()),
         user_agent_metadata: Some(UserAgentMetadata {
             platform: "Windows".to_string(),
-            platform_version: "19.0.0".to_string(),
+            platform_version: "19.0.0.0".to_string(),
             architecture: "x86".to_string(),
             model: "".to_string(),
             mobile: false,
@@ -630,14 +554,12 @@ fn run_all_queries(
                 retry_count = 0;
 
                 if query_index < queries.len() {
-                    let rest = rng.generate_range(4500_u64..=9000);
+                    let rest = rng.generate_range(3600..=7200);
                     println!("次のクエリまで {}ms 休憩...", rest);
                     thread::sleep(Duration::from_millis(rest));
 
-                    if let Err(e) = manager.full_reset() {
-                        println!("フルリセット失敗: {}。通常再起動試行。", e);
-                        let _ = manager.restart();
-                    }
+                    println!("再起動して profile リセット...");
+                    let _ = manager.restart();
                 }
             }
             Err(e) => {
@@ -652,12 +574,8 @@ fn run_all_queries(
                     query_index += 1;
                     retry_count = 0;
                 } else {
-                    println!("ブラウザ再起動してリトライ...");
-                    if let Err(restart_err) = manager.restart() {
-                        println!("再起動失敗: {}。スキップ。", restart_err);
-                        query_index += 1;
-                        retry_count = 0;
-                    }
+                    println!("ブラウザ再起動して profile リセット...");
+                    let _ = manager.restart();
                 }
                 continue;
             }
@@ -712,24 +630,36 @@ fn execute_single_query(
 
     tab.navigate_to("https://www.google.com")?;
     tab.wait_until_navigated()?;
-    human_pause_with_keepalive(tab, 1200)?;
+    human_pause_with_keepalive(tab, 960)?;
+
+    // ===== 位置情報ポップアップ「後で」自動クリック =====
+    loop {
+        match tab.wait_for_element_with_custom_timeout("div.sjVJQd.pt054b", Duration::from_secs(2))
+        {
+            Ok(el) => {
+                let _ = el.click(); // 「後で」をクリック
+                break;
+            }
+            Err(_) => break,
+        }
+    }
 
     let search_box = tab.wait_for_element("textarea[name='q']")?;
     search_box.click()?;
 
     human_type_medium(tab, query)?;
-
     thread::sleep(Duration::from_millis(450));
+
     tab.press_key("Enter")?;
     tab.wait_until_navigated()?;
-    human_pause_with_keepalive(tab, 750)?;
+    human_pause_with_keepalive(tab, 600)?;
 
     for page in 0..config.max_pages {
         let page_num = page + 1;
         println!("  ページ {}/{}", page_num, config.max_pages);
 
         tab.evaluate("1", false)?;
-        human_pause_with_keepalive(tab, 1200)?;
+        human_pause_with_keepalive(tab, 960)?;
 
         let html = tab.get_content()?;
         let results = extract_search_results(&html);
@@ -743,19 +673,17 @@ fn execute_single_query(
         human_scroll_to_bottom_medium(tab)?;
         human_pause_with_keepalive(tab, 750)?;
 
-        // 最終ページなら終了
         if page_num >= config.max_pages {
             println!("  最終ページ到達。");
             break;
         }
 
-        // 「次へ」をクリック
         match tab.wait_for_element_with_custom_timeout("#pnnext", Duration::from_secs(3)) {
             Ok(next_button) => {
                 *consecutive_no_next = 0;
                 next_button.click()?;
                 tab.wait_until_navigated()?;
-                human_pause_with_keepalive(tab, 600)?;
+                human_pause_with_keepalive(tab, 480)?;
             }
             Err(_) => {
                 *consecutive_no_next += 1;
@@ -819,16 +747,16 @@ fn human_scroll_to_bottom_medium(tab: &Arc<Tab>) -> Result<()> {
 
         let (scroll_amount, base_delay) = match current_mode {
             0 => (
-                rng.generate_range(12_i32..=26),
-                rng.generate_range(120_u64..=225),
+                rng.generate_range(14_i32..=31),  // 12..=26 → 1.2倍
+                rng.generate_range(96_u64..=180), // 120..=225 → 0.8倍
             ),
             1 => (
-                rng.generate_range(22_i32..=42),
-                rng.generate_range(75_u64..=150),
+                rng.generate_range(26_i32..=50),  // 22..=42 → 1.2倍
+                rng.generate_range(60_u64..=120), // 75..=150 → 0.8倍
             ),
             _ => (
-                rng.generate_range(34_i32..=56),
-                rng.generate_range(52_u64..=105),
+                rng.generate_range(40_i32..=67), // 34..=56 → 1.2倍
+                rng.generate_range(42_u64..=84), // 52..=105 → 0.8倍
             ),
         };
 
@@ -843,12 +771,12 @@ fn human_scroll_to_bottom_medium(tab: &Arc<Tab>) -> Result<()> {
         thread::sleep(Duration::from_millis(base_delay));
 
         if rng.generate_range(0_u32..100) < 8 {
-            let pause = rng.generate_range(300_u64..=900);
+            let pause = rng.generate_range(240..=720);
             human_pause_with_keepalive(tab, pause)?;
         }
 
         if rng.generate_range(0_u32..100) < 3 {
-            let pause = rng.generate_range(1500_u64..=3000);
+            let pause = rng.generate_range(1200..=2400);
             println!("  ...{}ms 閲覧中", pause);
             human_pause_with_keepalive(tab, pause)?;
         }
@@ -862,7 +790,7 @@ fn human_scroll_to_bottom_medium(tab: &Arc<Tab>) -> Result<()> {
                 ),
                 false,
             )?;
-            let pause = rng.generate_range(450_u64..=1200);
+            let pause = rng.generate_range(360..=960);
             human_pause_with_keepalive(tab, pause)?;
         }
     }
@@ -901,3 +829,5 @@ fn human_type_medium(tab: &Arc<Tab>, text: &str) -> Result<()> {
 
     Ok(())
 }
+
+// ====== ここまでで完全なコード ======
