@@ -624,29 +624,51 @@ fn execute_single_query(
     consecutive_no_next: &mut u32,
     config: &Config,
 ) -> Result<()> {
+    use std::thread;
+    use std::time::Duration;
+
+    // ===== 初期化 =====
     tab.navigate_to("about:blank")?;
     thread::sleep(Duration::from_millis(300));
     tab.evaluate("1", false)?;
 
+    // ===== Googleトップ =====
     tab.navigate_to("https://www.google.com")?;
     tab.wait_until_navigated()?;
     human_pause_with_keepalive(tab, 960)?;
 
-    // ===== 位置情報ポップアップ「後で」自動クリック =====
-    loop {
-        match tab.wait_for_element_with_custom_timeout("div.sjVJQd.pt054b", Duration::from_secs(2))
-        {
-            Ok(el) => {
-                let _ = el.click(); // 「後で」をクリック
-                break;
-            }
-            Err(_) => break,
-        }
-    }
+    // ===== 位置情報 / Cookie / Consent「後で」最強クリック =====
+    let _ = tab.evaluate(
+        r#"
+        (function () {
+            const timeout = Date.now() + 3000;
+            const timer = setInterval(() => {
+                const candidates = Array.from(
+                    document.querySelectorAll('div, button')
+                ).filter(e =>
+                    e.innerText &&
+                    e.innerText.includes('後で')
+                );
 
+                if (candidates.length > 0) {
+                    candidates[0].click();
+                    clearInterval(timer);
+                }
+
+                if (Date.now() > timeout) {
+                    clearInterval(timer);
+                }
+            }, 200);
+        })();
+        "#,
+        false,
+    );
+
+    human_pause_with_keepalive(tab, 600)?;
+
+    // ===== 検索ボックス =====
     let search_box = tab.wait_for_element("textarea[name='q']")?;
     search_box.click()?;
-
     human_type_medium(tab, query)?;
     thread::sleep(Duration::from_millis(450));
 
@@ -654,6 +676,7 @@ fn execute_single_query(
     tab.wait_until_navigated()?;
     human_pause_with_keepalive(tab, 600)?;
 
+    // ===== 検索結果ページループ =====
     for page in 0..config.max_pages {
         let page_num = page + 1;
         println!("  ページ {}/{}", page_num, config.max_pages);
