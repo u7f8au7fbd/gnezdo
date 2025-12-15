@@ -769,17 +769,26 @@ fn human_scroll_to_bottom_medium(tab: &Arc<Tab>) -> Result<()> {
         mode_steps_remaining -= 1;
 
         let (scroll_amount, base_delay) = match current_mode {
+            // current_mode = 0
             0 => (
-                rng.generate_range(14_i32..=31),  // 12..=26 → 1.2倍
-                rng.generate_range(96_u64..=180), // 120..=225 → 0.8倍
+                // scroll_amount: 112..=248 を2倍に (224..=496)
+                rng.generate_range(224_i32..=496),
+                // base_delay: 12..=22 を0.5倍に (6..=11)
+                rng.generate_range(6_u64..=11),
             ),
+            // current_mode = 1
             1 => (
-                rng.generate_range(26_i32..=50),  // 22..=42 → 1.2倍
-                rng.generate_range(60_u64..=120), // 75..=150 → 0.8倍
+                // scroll_amount: 208..=400 を2倍に (416..=800)
+                rng.generate_range(416_i32..=800),
+                // base_delay: 7..=15 を0.5倍に (3.5..=7.5) -> 整数型なので 3..=7
+                rng.generate_range(3_u64..=7),
             ),
+            // current_mode = その他
             _ => (
-                rng.generate_range(40_i32..=67), // 34..=56 → 1.2倍
-                rng.generate_range(42_u64..=84), // 52..=105 → 0.8倍
+                // scroll_amount: 320..=536 を2倍に (640..=1072)
+                rng.generate_range(640_i32..=1072),
+                // base_delay: 5..=10 を0.5倍に (2.5..=5) -> 整数型なので 2..=5
+                rng.generate_range(2_u64..=5),
             ),
         };
 
