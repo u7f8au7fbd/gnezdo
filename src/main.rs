@@ -771,24 +771,24 @@ fn human_scroll_to_bottom_medium(tab: &Arc<Tab>) -> Result<()> {
         let (scroll_amount, base_delay) = match current_mode {
             // current_mode = 0
             0 => (
-                // scroll_amount: 112..=248 を2倍に (224..=496)
-                rng.generate_range(224_i32..=496),
-                // base_delay: 12..=22 を0.5倍に (6..=11)
-                rng.generate_range(6_u64..=11),
+                // scroll_amount: 14..=31 を8倍に (112..=248)
+                rng.generate_range(100_i32..=200),
+                // base_delay: 96..=180 を0.125倍に (12..=22.5) -> 整数型なので 12..=22
+                rng.generate_range(15_u64..=20),
             ),
             // current_mode = 1
             1 => (
-                // scroll_amount: 208..=400 を2倍に (416..=800)
-                rng.generate_range(416_i32..=800),
-                // base_delay: 7..=15 を0.5倍に (3.5..=7.5) -> 整数型なので 3..=7
-                rng.generate_range(3_u64..=7),
+                // scroll_amount: 26..=50 を8倍に (208..=400)
+                rng.generate_range(200_i32..=300),
+                // base_delay: 60..=120 を0.125倍に (7.5..=15) -> 整数型なので 7..=15
+                rng.generate_range(10_u64..=15),
             ),
             // current_mode = その他
             _ => (
-                // scroll_amount: 320..=536 を2倍に (640..=1072)
-                rng.generate_range(640_i32..=1072),
-                // base_delay: 5..=10 を0.5倍に (2.5..=5) -> 整数型なので 2..=5
-                rng.generate_range(2_u64..=5),
+                // scroll_amount: 40..=67 を8倍に (320..=536)
+                rng.generate_range(300_i32..=400),
+                // base_delay: 42..=84 を0.125倍に (5.25..=10.5) -> 整数型なので 5..=10
+                rng.generate_range(5_u64..=10),
             ),
         };
 
@@ -802,18 +802,18 @@ fn human_scroll_to_bottom_medium(tab: &Arc<Tab>) -> Result<()> {
 
         thread::sleep(Duration::from_millis(base_delay));
 
-        if rng.generate_range(0_u32..100) < 8 {
+        if rng.generate_range(0_u32..100) < 30 {
             let pause = rng.generate_range(240..=720);
             human_pause_with_keepalive(tab, pause)?;
         }
 
-        if rng.generate_range(0_u32..100) < 3 {
+        if rng.generate_range(0_u32..100) < 20 {
             let pause = rng.generate_range(1200..=2400);
             println!("  ...{}ms 閲覧中", pause);
             human_pause_with_keepalive(tab, pause)?;
         }
 
-        if rng.generate_range(0_u32..100) < 2 {
+        if rng.generate_range(0_u32..100) < 10 {
             let back_amount = rng.generate_range(38_i32..=112);
             tab.evaluate(
                 &format!(
