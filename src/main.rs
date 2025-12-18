@@ -1,3 +1,15 @@
+// main.rs - Gnezdo Ver 1.2
+//
+// Ver 1.1からの変更点:
+// - 位置情報ポップアップ完全ブロック機能追加
+//   - CSS強制非表示（ダイアログ/ライトボックス）
+//   - Geolocation API完全無効化（JS側）
+//   - permissions.query偽装（geolocationを常にdenied）
+//   - 精密セレクタによる「後で」ボタン検出
+//   - MutationObserver強化（属性変更も監視）
+//   - 多重監視機構（RAF/イベント/定期チェック）
+//   - 要素削除機能追加
+
 use anyhow::Result;
 use chrono::{DateTime, Local};
 use headless_chrome::{Browser, LaunchOptions, Tab};
@@ -239,6 +251,7 @@ impl<'a> BrowserManager<'a> {
         Ok(self.browser.as_ref().unwrap())
     }
 }
+
 // ============================================================
 // ブラウザ起動
 // ============================================================
@@ -326,6 +339,7 @@ fn setup_stealth_cdp(tab: &Tab) -> Result<()> {
                 UserAgentBrandVersion { brand: "Google Chrome".to_string(), version: "143".to_string() },
                 UserAgentBrandVersion { brand: "Not/A)Brand".to_string(), version: "99".to_string() },
             ]),
+            form_factors: None,
         }),
     })?;
 
@@ -333,13 +347,18 @@ fn setup_stealth_cdp(tab: &Tab) -> Result<()> {
 }
 
 // ============================================================
-// JavaScript Stealth Injection
+// JavaScript Stealth Injection（Ver 1.2 強化版）
 // ============================================================
 fn inject_stealth_scripts(tab: &Tab) -> Result<()> {
     use headless_chrome::protocol::cdp::Page::AddScriptToEvaluateOnNewDocument;
 
     let scripts = vec![
+        // ===== 基本Stealth =====
+        
+        // webdriver検出回避
         r#"Object.defineProperty(navigator, 'webdriver', { get: () => undefined, configurable: true });"#,
+
+        // chrome オブジェクト偽装
         r#"window.chrome = {
             runtime: {
                 connect: function() {},
@@ -356,12 +375,16 @@ fn inject_stealth_scripts(tab: &Tab) -> Result<()> {
             csi: function() { return {}; },
             loadTimes: function() { return {}; }
         };"#,
+
+        // permissions.query 偽装（通知用）
         r#"const originalQuery = window.navigator.permissions.query;
         window.navigator.permissions.query = (parameters) => (
             parameters.name === 'notifications' ?
                 Promise.resolve({ state: Notification.permission }) :
                 originalQuery(parameters)
         );"#,
+
+        // plugins/mimeTypes 偽装
         r#"Object.defineProperty(navigator, 'plugins', {
             get: () => {
                 const plugins = [
@@ -385,9 +408,17 @@ fn inject_stealth_scripts(tab: &Tab) -> Result<()> {
                 return mimeTypes;
             }
         });"#,
+
+        // languages 偽装
         r#"Object.defineProperty(navigator, 'languages', { get: () => ['ja-JP', 'ja', 'en-US', 'en'] });"#,
+
+        // hardwareConcurrency 偽装
         r#"Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 12 });"#,
+
+        // deviceMemory 偽装
         r#"Object.defineProperty(navigator, 'deviceMemory', { get: () => 8 });"#,
+
+        // WebGL 偽装
         r#"const getParameterOriginal = WebGLRenderingContext.prototype.getParameter;
         WebGLRenderingContext.prototype.getParameter = function(parameter) {
             if (parameter === 37445) return 'Google Inc. (NVIDIA)';
@@ -400,8 +431,12 @@ fn inject_stealth_scripts(tab: &Tab) -> Result<()> {
             if (parameter === 37446) return 'ANGLE (NVIDIA, NVIDIA GeForce RTX 2080 Ti Direct3D11 vs_5_0 ps_5_0, D3D11)';
             return getParameterOriginal2.call(this, parameter);
         };"#,
+
+        // Brave/Firefox 検出回避
         r#"Object.defineProperty(navigator, 'brave', { get: () => undefined });
         delete window.InstallTrigger;"#,
+
+        // Function.prototype.toString 偽装
         r#"const nativeToString = Function.prototype.toString;
         const customFunctions = new WeakSet();
         const proxyHandler = {
@@ -412,6 +447,220 @@ fn inject_stealth_scripts(tab: &Tab) -> Result<()> {
         };
         Function.prototype.toString = new Proxy(nativeToString, proxyHandler);
         customFunctions.add(Function.prototype.toString);"#,
+
+        // ===== 位置情報ポップアップ完全ブロック（Ver 1.2 新機能） =====
+
+        // A. CSS強制非表示
+        r#"
+        (function() {
+            const style = document.createElement('style');
+            style.textContent = `
+                /* 位置情報ダイアログ本体 */
+                div.gTMtLb[id="lb"],
+                div[role="dialog"][aria-labelledby="lcMwfd"],
+                div.qk7LXc.JHqNkc,
+                /* update-location コンポーネント全体 */
+                update-location,
+                /* 位置情報スナックバー */
+                location-snackbar-with-learn-more,
+                /* ライトボックス背景 */
+                div.kJFf0c.KUf18 {
+                    display: none !important;
+                    visibility: hidden !important;
+                    opacity: 0 !important;
+                    pointer-events: none !important;
+                }
+            `;
+            (document.head || document.documentElement).appendChild(style);
+        })();
+        "#,
+
+        // B. Geolocation API完全無効化
+        r#"
+        (function() {
+            // Geolocation API無効化
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition = function(success, error) {
+                    if (error) error({ code: 1, message: 'User denied Geolocation' });
+                };
+                navigator.geolocation.watchPosition = function(success, error) {
+                    if (error) error({ code: 1, message: 'User denied Geolocation' });
+                    return 0;
+                };
+                navigator.geolocation.clearWatch = function() {};
+            }
+            
+            // permissions.query偽装（geolocationを常にdenied）
+            const origPermQuery = navigator.permissions.query.bind(navigator.permissions);
+            navigator.permissions.query = function(descriptor) {
+                if (descriptor.name === 'geolocation') {
+                    return Promise.resolve({ 
+                        state: 'denied',
+                        onchange: null,
+                        addEventListener: function() {},
+                        removeEventListener: function() {}
+                    });
+                }
+                return origPermQuery(descriptor);
+            };
+        })();
+        "#,
+
+        // C. 精密クリック + 常時監視（強化版）
+        r#"
+        (function() {
+            const SELECTORS = {
+                dialog: 'div[role="dialog"][aria-labelledby="lcMwfd"]',
+                dialogAlt: 'div.qk7LXc.JHqNkc[role="dialog"]',
+                lightbox: 'div.gTMtLb#lb',
+                laterButton: [
+                    'g-raised-button[jsaction="click:O6N1Pb"]',
+                    'div.mpQYc g-raised-button'
+                ],
+                closeButton: 'a[aria-label="閉じる"]'
+            };
+            
+            let lastDismissTime = 0;
+            const DEBOUNCE_MS = 100;
+            
+            const dismiss = () => {
+                const now = Date.now();
+                if (now - lastDismissTime < DEBOUNCE_MS) return false;
+                lastDismissTime = now;
+                
+                const dialog = document.querySelector(SELECTORS.dialog) ||
+                               document.querySelector(SELECTORS.dialogAlt);
+                if (!dialog) return false;
+                
+                const style = window.getComputedStyle(dialog);
+                if (style.display === 'none' || 
+                    style.visibility === 'hidden' || 
+                    parseFloat(style.opacity) === 0) {
+                    return false;
+                }
+                
+                // 「後で」ボタン検索・クリック
+                for (const sel of SELECTORS.laterButton) {
+                    const btn = dialog.querySelector(sel) || document.querySelector(sel);
+                    if (btn) {
+                        btn.click();
+                        btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+                        console.log('[Gnezdo] 「後で」クリック成功');
+                        setTimeout(remove, 50);
+                        return true;
+                    }
+                }
+                
+                // 閉じるボタン（フォールバック）
+                const close = document.querySelector(SELECTORS.closeButton);
+                if (close) { 
+                    close.click(); 
+                    console.log('[Gnezdo] 「閉じる」クリック');
+                    setTimeout(remove, 50);
+                    return true; 
+                }
+                
+                // テキストベース検索（最終手段）
+                const all = dialog.querySelectorAll('div[role="button"], button, g-raised-button');
+                for (const b of all) {
+                    const text = b.innerText?.trim();
+                    if (text === '後で' || text === 'Later' || text === 'Not now') {
+                        b.click();
+                        console.log('[Gnezdo] テキストマッチでクリック:', text);
+                        setTimeout(remove, 50);
+                        return true;
+                    }
+                }
+                return false;
+            };
+            
+            const remove = () => {
+                const lb = document.querySelector(SELECTORS.lightbox);
+                if (lb) { 
+                    lb.style.display = 'none'; 
+                    lb.remove(); 
+                    console.log('[Gnezdo] ライトボックス削除');
+                }
+            };
+            
+            // ===== 監視機構（多重化） =====
+            
+            // 1. 初回実行（ページロード後）
+            setTimeout(dismiss, 300);
+            setTimeout(dismiss, 600);
+            setTimeout(dismiss, 1000);
+            
+            // 2. MutationObserver（DOM変更検知）
+            const observer = new MutationObserver((mutations) => {
+                for (const m of mutations) {
+                    if (m.type === 'childList' && m.addedNodes.length > 0) {
+                        dismiss();
+                        return;
+                    }
+                    if (m.type === 'attributes') {
+                        const t = m.target;
+                        if (t.id === 'lb' || 
+                            t.matches?.('[role="dialog"]') ||
+                            t.classList?.contains('gTMtLb')) {
+                            dismiss();
+                            return;
+                        }
+                    }
+                }
+            });
+            
+            const startObserver = () => {
+                observer.observe(document.body, {
+                    childList: true,
+                    subtree: true,
+                    attributes: true,
+                    attributeFilter: ['style', 'class', 'aria-hidden', 'hidden']
+                });
+            };
+            
+            // 3. 定期チェック（500ms間隔）
+            setInterval(dismiss, 500);
+            
+            // 4. イベントベース監視
+            ['scroll', 'click', 'keydown', 'mousemove'].forEach(event => {
+                document.addEventListener(event, () => {
+                    setTimeout(dismiss, 50);
+                }, { passive: true, capture: true });
+            });
+            
+            // 5. フォーカス/表示状態変更時
+            window.addEventListener('focus', dismiss);
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'visible') dismiss();
+            });
+            
+            // 6. ページ遷移系イベント
+            window.addEventListener('popstate', dismiss);
+            window.addEventListener('hashchange', dismiss);
+            
+            // 7. requestAnimationFrame監視（最初の30秒間のみ）
+            let rafActive = true;
+            const rafCheck = () => {
+                if (!rafActive) return;
+                dismiss();
+                setTimeout(() => requestAnimationFrame(rafCheck), 200);
+            };
+            requestAnimationFrame(rafCheck);
+            setTimeout(() => { rafActive = false; }, 30000);
+            
+            // 開始
+            if (document.body) {
+                startObserver();
+            } else {
+                document.addEventListener('DOMContentLoaded', () => {
+                    startObserver();
+                    dismiss();
+                });
+            }
+            
+            console.log('[Gnezdo] 位置情報ポップアップ監視開始 (Ver 1.2)');
+        })();
+        "#,
     ];
 
     for script in scripts {
@@ -431,6 +680,7 @@ fn inject_stealth_scripts(tab: &Tab) -> Result<()> {
 // ============================================================
 fn main() -> Result<()> {
     let program_start = Local::now();
+    println!("Gnezdo Ver 1.2 起動");
     println!("開始時刻: {}", program_start.format("%Y-%m-%d %H:%M:%S"));
 
     if cfg!(debug_assertions) {
@@ -624,9 +874,6 @@ fn execute_single_query(
     consecutive_no_next: &mut u32,
     config: &Config,
 ) -> Result<()> {
-    use std::thread;
-    use std::time::Duration;
-
     // ===== 初期化 =====
     tab.navigate_to("about:blank")?;
     thread::sleep(Duration::from_millis(300));
@@ -636,35 +883,6 @@ fn execute_single_query(
     tab.navigate_to("https://www.google.com")?;
     tab.wait_until_navigated()?;
     human_pause_with_keepalive(tab, 960)?;
-
-    // ===== 位置情報 / Cookie / Consent「後で」最強クリック =====
-    let _ = tab.evaluate(
-        r#"
-        (function () {
-            const timeout = Date.now() + 3000;
-            const timer = setInterval(() => {
-                const candidates = Array.from(
-                    document.querySelectorAll('div, button')
-                ).filter(e =>
-                    e.innerText &&
-                    e.innerText.includes('後で')
-                );
-
-                if (candidates.length > 0) {
-                    candidates[0].click();
-                    clearInterval(timer);
-                }
-
-                if (Date.now() > timeout) {
-                    clearInterval(timer);
-                }
-            }, 200);
-        })();
-        "#,
-        false,
-    );
-
-    human_pause_with_keepalive(tab, 600)?;
 
     // ===== 検索ボックス =====
     let search_box = tab.wait_for_element("textarea[name='q']")?;
@@ -736,7 +954,7 @@ fn execute_single_query(
 }
 
 // ============================================================
-// 人間らしいスクロール（1.5倍遅延版）
+// 人間らしいスクロール
 // ============================================================
 fn human_scroll_to_bottom_medium(tab: &Arc<Tab>) -> Result<()> {
     let mut rng = WyRand::new();
@@ -769,26 +987,17 @@ fn human_scroll_to_bottom_medium(tab: &Arc<Tab>) -> Result<()> {
         mode_steps_remaining -= 1;
 
         let (scroll_amount, base_delay) = match current_mode {
-            // current_mode = 0
             0 => (
-                // scroll_amount: 14..=31 を8倍に (112..=248)
-                rng.generate_range(100_i32..=200),
-                // base_delay: 96..=180 を0.125倍に (12..=22.5) -> 整数型なので 12..=22
+                rng.generate_range(175_i32..=200),
+                rng.generate_range(20_u64..=25),
+            ),
+            1 => (
+                rng.generate_range(200_i32..=225),
                 rng.generate_range(15_u64..=20),
             ),
-            // current_mode = 1
-            1 => (
-                // scroll_amount: 26..=50 を8倍に (208..=400)
-                rng.generate_range(200_i32..=300),
-                // base_delay: 60..=120 を0.125倍に (7.5..=15) -> 整数型なので 7..=15
-                rng.generate_range(10_u64..=15),
-            ),
-            // current_mode = その他
             _ => (
-                // scroll_amount: 40..=67 を8倍に (320..=536)
-                rng.generate_range(300_i32..=400),
-                // base_delay: 42..=84 を0.125倍に (5.25..=10.5) -> 整数型なので 5..=10
-                rng.generate_range(5_u64..=10),
+                rng.generate_range(225_i32..=250),
+                rng.generate_range(10_u64..=15),
             ),
         };
 
@@ -848,7 +1057,7 @@ fn human_pause_with_keepalive(tab: &Arc<Tab>, total_ms: u64) -> Result<()> {
 }
 
 // ============================================================
-// 人間らしいタイピング（1.5倍遅延版）
+// 人間らしいタイピング
 // ============================================================
 fn human_type_medium(tab: &Arc<Tab>, text: &str) -> Result<()> {
     let mut rng = WyRand::new();
@@ -861,5 +1070,3 @@ fn human_type_medium(tab: &Arc<Tab>, text: &str) -> Result<()> {
 
     Ok(())
 }
-
-// ====== ここまでで完全なコード ======

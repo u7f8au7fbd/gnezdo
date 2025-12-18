@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 nanorand = { version = "0.8.0" }
 anyhow={version="1.0.100"}
-headless_chrome={version="1.0.18",features=["native-tls","nightly",]}
+headless_chrome={version="1.0.20",features=["native-tls","nightly",]}
 serde = { version = "1.0.228" ,features=["derive"]}
 serde_json = { version = "1.0.145" ,features=["default"]}
 chrono = { version = "0.4.42" ,features=["default"]}
