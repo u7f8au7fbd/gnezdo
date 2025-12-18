@@ -1,4 +1,7 @@
-// main.rs - Gnezdo Ver 1.2
+// main.rs - Gnezdo Ver 1.3
+//
+// Ver 1.2からの変更点:
+// - URL重複除外機能追加（同一ページ内で同じURLが複数ある場合、上位優先で残す）
 //
 // Ver 1.1からの変更点:
 // - 位置情報ポップアップ完全ブロック機能追加
@@ -16,6 +19,7 @@ use headless_chrome::{Browser, LaunchOptions, Tab};
 use nanorand::{Rng, WyRand};
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::env;
 use std::ffi::OsStr;
 use std::fs;
@@ -208,6 +212,8 @@ fn extract_search_results(html: &str) -> Vec<(String, String)> {
     let document = Html::parse_document(html);
     let selector = Selector::parse(r#"a[jsname="UWckNb"]"#).unwrap();
     let mut results = Vec::new();
+    let mut seen_urls: HashSet<String> = HashSet::new();
+    
     for element in document.select(&selector) {
         let url = element.value().attr("href").unwrap_or("").to_string();
         let title_selector = Selector::parse("h3").unwrap();
@@ -216,7 +222,10 @@ fn extract_search_results(html: &str) -> Vec<(String, String)> {
             .next()
             .map(|h3| h3.text().collect::<String>())
             .unwrap_or_default();
-        if !url.is_empty() && !title.is_empty() {
+        
+        // URL重複チェック（上位優先で残す）
+        if !url.is_empty() && !title.is_empty() && !seen_urls.contains(&url) {
+            seen_urls.insert(url.clone());
             results.push((title, url));
         }
     }
@@ -658,7 +667,7 @@ fn inject_stealth_scripts(tab: &Tab) -> Result<()> {
                 });
             }
             
-            console.log('[Gnezdo] 位置情報ポップアップ監視開始 (Ver 1.2)');
+            console.log('[Gnezdo] 位置情報ポップアップ監視開始 (Ver 1.3)');
         })();
         "#,
     ];
@@ -680,7 +689,7 @@ fn inject_stealth_scripts(tab: &Tab) -> Result<()> {
 // ============================================================
 fn main() -> Result<()> {
     let program_start = Local::now();
-    println!("Gnezdo Ver 1.2 起動");
+    println!("Gnezdo Ver 1.3 起動");
     println!("開始時刻: {}", program_start.format("%Y-%m-%d %H:%M:%S"));
 
     if cfg!(debug_assertions) {
