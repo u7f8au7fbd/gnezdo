@@ -997,15 +997,15 @@ fn human_scroll_to_bottom_medium(tab: &Arc<Tab>) -> Result<()> {
 
         let (scroll_amount, base_delay) = match current_mode {
             0 => (
-                rng.generate_range(175_i32..=200),
+                rng.generate_range(250_i32..=275),
                 rng.generate_range(20_u64..=25),
             ),
             1 => (
-                rng.generate_range(200_i32..=225),
+                rng.generate_range(275_i32..=300),
                 rng.generate_range(15_u64..=20),
             ),
             _ => (
-                rng.generate_range(225_i32..=250),
+                rng.generate_range(300_i32..=325),
                 rng.generate_range(10_u64..=15),
             ),
         };
