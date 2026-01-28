@@ -1,6 +1,6 @@
 [package]
 name = "gnezdot"
-version = "1.2.2"
+version = "2.0.0"
 edition = "2024"
 
 [dependencies]
@@ -8,7 +8,7 @@ nanorand = { version = "0.8.0" }
 anyhow={version="1.0.100"}
 headless_chrome={version="1.0.20",features=["native-tls","nightly",]}
 serde = { version = "1.0.228" ,features=["derive"]}
-serde_json = { version = "1.0.145" ,features=["default"]}
-chrono = { version = "0.4.42" ,features=["default"]}
+serde_json = { version = "1.0.149" ,features=["default"]}
+chrono = { version = "0.4.43" ,features=["default"]}
 scraper = {version="0.25.0",features=["default"]}
-toml = { version = "0.9.8" ,features=["serde"]}
+toml = { version = "0.9.11" ,features=["serde"]}
